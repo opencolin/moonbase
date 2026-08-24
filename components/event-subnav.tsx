@@ -11,7 +11,9 @@ import { cn } from "@/lib/utils";
  */
 export function EventSubnav({
   slug,
-  showShowcase = true,
+  // Off until submissions ship — the showcase route does not exist yet,
+  // and a nav tab that 404s is worse than a missing one.
+  showShowcase = false,
 }: {
   slug: string;
   showShowcase?: boolean;

@@ -8,6 +8,7 @@ import { EventCover, THEME_STOPS } from "@/components/event-cover";
 import { Markdown } from "@/components/markdown";
 import { MapBlock } from "@/components/map-block";
 import { RegistrationForm } from "@/components/registration-form";
+import { EventSubnav } from "@/components/event-subnav";
 import { SiteNav } from "@/components/site-nav";
 import { Avatar, AvatarStack } from "@/components/ui/avatar";
 import { getEventBySlug, findRegistration } from "@/lib/events";
@@ -49,6 +50,10 @@ export default async function EventPage({ params }: Params) {
   return (
     <>
       <SiteNav />
+
+      {/* Teams / builders / showcase live behind this. Only hackathon
+          events render it, so an ordinary meetup page is untouched. */}
+      {event.hackathonMode && <EventSubnav slug={slug} />}
 
       {/* themed ambient backdrop */}
       <div
