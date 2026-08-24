@@ -81,6 +81,12 @@ export default async function ManagePage({ params }: Params) {
           </div>
           <div className="flex gap-2">
             <CopyButton path={`/${event.slug}`} />
+            <ButtonLink
+              href={`/${event.slug}/manage/sheet`}
+              variant="secondary"
+            >
+              Attendee sheet
+            </ButtonLink>
             <ButtonLink href={`/${event.slug}`} variant="secondary">
               View page
             </ButtonLink>

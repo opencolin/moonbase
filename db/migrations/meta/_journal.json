@@ -8,6 +8,34 @@
       "when": 1780908940322,
       "tag": "0000_thick_luckman",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1786950504990,
+      "tag": "0001_fancy_queen_noir",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1786960114025,
+      "tag": "0002_clever_shen",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1786968692401,
+      "tag": "0003_demonic_reavers",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1786990602650,
+      "tag": "0004_conscious_galactus",
+      "breakpoints": true
     }
   ]
 }

@@ -7,6 +7,8 @@ import { z } from "zod";
 import { db } from "@/db";
 import { eventHosts, events, tickets } from "@/db/schema";
 import { createSession, findOrCreateUser, getCurrentUser } from "@/lib/auth";
+import { isValidTimeZone, zonedTimeToUtc } from "@/lib/dates";
+import { defaultOrganizationFor } from "@/lib/organizations";
 
 const emptyToUndef = (v: unknown) =>
   v === "" || v === null || v === undefined ? undefined : v;
@@ -63,22 +65,33 @@ export async function createEvent(
     await createSession(user.id);
   }
 
-  const start = new Date(d.startAt);
+  // The form sends wall-clock strings; interpret them in the event's own
+  // timezone, never the server's. See zonedTimeToUtc.
+  const timezone = isValidTimeZone(d.timezone)
+    ? d.timezone
+    : "America/Los_Angeles";
+
+  const start = zonedTimeToUtc(d.startAt, timezone);
   if (Number.isNaN(start.getTime())) return { error: "Invalid start time" };
-  const end = d.endAt ? new Date(d.endAt) : null;
+  const end = d.endAt ? zonedTimeToUtc(d.endAt, timezone) : null;
+
+  // Every event belongs to an org. With no picker yet this is always the
+  // creator's personal org — invisible to them, but the row is correct.
+  const organization = await defaultOrganizationFor(user);
 
   const slug = nanoid(8);
   const [event] = await db
     .insert(events)
     .values({
       slug,
+      organizationId: organization.id,
       title: d.title,
       description: d.description ?? "",
       themeColor: d.themeColor,
       coverPattern: d.coverPattern,
       startAt: start,
       endAt: end && !Number.isNaN(end.getTime()) ? end : null,
-      timezone: d.timezone,
+      timezone,
       locationType: d.locationType,
       locationName: d.locationName || null,
       locationAddress: d.locationAddress || null,

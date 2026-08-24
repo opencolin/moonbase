@@ -162,3 +162,68 @@
   }
   .animate-spin-slow { animation: spin-slow 1s linear infinite; }
 }
+
+/* ---------------------------------------------------------------
+ * Attendee sheet — print
+ *
+ * The on-screen grid is a scrolling viewport with sticky headers and a
+ * selection model; none of that survives paper. So printing swaps it for a
+ * plain repeating-header table plus a "Checked in" column to tick at the
+ * door.
+ * ------------------------------------------------------------- */
+@media print {
+  .no-print,
+  .sheet-wrap,
+  .sheet-toolbar {
+    display: none !important;
+  }
+
+  .print-header {
+    display: block !important;
+    margin-bottom: 12pt;
+  }
+  .print-header h1 {
+    font-size: 16pt;
+    font-weight: 600;
+    margin: 0;
+  }
+  .print-header p {
+    font-size: 9pt;
+    color: #444;
+    margin: 2pt 0 0;
+  }
+
+  .print-table {
+    display: table !important;
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9pt;
+  }
+  /* Repeat the header on every printed page. */
+  .print-table thead {
+    display: table-header-group;
+  }
+  .print-table tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .print-table th,
+  .print-table td {
+    border: 0.5pt solid #999;
+    padding: 3pt 5pt;
+    text-align: left;
+    vertical-align: top;
+  }
+  .print-table th {
+    background: #f0f0f0;
+    font-weight: 600;
+  }
+  /* Room to actually tick a box with a pen. */
+  .print-table .signature-col {
+    width: 70pt;
+  }
+
+  @page {
+    margin: 12mm;
+  }
+}

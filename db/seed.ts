@@ -1,4 +1,5 @@
 import { createClient } from "@libsql/client";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/libsql";
 import { nanoid } from "nanoid";
 import * as schema from "./schema";
@@ -17,7 +18,24 @@ const at = (days: number, hour = 18) =>
 async function main() {
   console.log("→ Seeding Luma demo data…");
 
-  // Idempotent reset
+  // Idempotent reset. FK cascades are off, so children go before parents.
+  await db.delete(schema.scores);
+  await db.delete(schema.judgeAssignments);
+  await db.delete(schema.judgingCriteria);
+  await db.delete(schema.judges);
+  await db.delete(schema.submissionValues);
+  await db.delete(schema.submissionMedia);
+  await db.delete(schema.submissions);
+  await db.delete(schema.submissionFields);
+  await db.delete(schema.teamJoinRequests);
+  await db.delete(schema.teamSkills);
+  await db.delete(schema.teamMembers);
+  await db.delete(schema.teams);
+  await db.delete(schema.participants);
+  await db.delete(schema.tracks);
+  await db.delete(schema.lumaLinks);
+  await db.delete(schema.userSkills);
+  await db.delete(schema.skills);
   await db.delete(schema.registrations);
   await db.delete(schema.eventHosts);
   await db.delete(schema.tickets);
@@ -25,6 +43,10 @@ async function main() {
   await db.delete(schema.calendarSubscriptions);
   await db.delete(schema.calendars);
   await db.delete(schema.sessions);
+  // FK cascades are not enforced on this connection, so org membership has
+  // to go before the users and orgs it points at.
+  await db.delete(schema.organizationMembers);
+  await db.delete(schema.organizations);
   await db.delete(schema.users);
 
   /* --------------------------- Users --------------------------- */
@@ -47,6 +69,31 @@ async function main() {
     .returning();
   const byEmail = (e: string) => users.find((u) => u.email === e)!;
 
+  /* ---------------------- Organizations ------------------------ */
+  // Every user gets a personal org — the same thing findOrCreateUser does
+  // in the app. Nothing in the seeded UI surfaces them.
+  const orgs = await db
+    .insert(schema.organizations)
+    .values(
+      users.map((u) => ({
+        slug: u.email.split("@")[0].replace(/[^a-z0-9]+/g, "-"),
+        name: u.name,
+        avatarUrl: u.avatarUrl ?? null,
+        isPersonal: true,
+      })),
+    )
+    .returning();
+
+  await db.insert(schema.organizationMembers).values(
+    users.map((u, i) => ({
+      organizationId: orgs[i].id,
+      userId: u.id,
+      role: "owner",
+    })),
+  );
+
+  const orgOf = (email: string) => orgs[users.findIndex((u) => u.email === email)];
+
   /* ------------------------- Calendars ------------------------- */
   const calendars = await db
     .insert(schema.calendars)
@@ -58,6 +105,7 @@ async function main() {
           "The best technology meetups, talks and hack nights across San Francisco.",
         color: "blue",
         ownerId: byEmail("ada@luma.dev").id,
+        organizationId: orgOf("ada@luma.dev").id,
       },
       {
         slug: "design-guild",
@@ -65,6 +113,7 @@ async function main() {
         description: "Portfolio reviews, critiques and design jams.",
         color: "purple",
         ownerId: byEmail("sora@luma.dev").id,
+        organizationId: orgOf("sora@luma.dev").id,
       },
       {
         slug: "climate-collective",
@@ -72,6 +121,7 @@ async function main() {
         description: "Founders and builders working on the climate.",
         color: "green",
         ownerId: byEmail("priya@luma.dev").id,
+        organizationId: orgOf("priya@luma.dev").id,
       },
     ])
     .returning();
@@ -292,6 +342,7 @@ async function main() {
         capacity: s.capacity ?? null,
         requiresApproval: s.requiresApproval ?? false,
         hostId: byEmail(s.host).id,
+        organizationId: orgOf(s.host).id,
         calendarId: s.calendar ? cal(s.calendar).id : null,
       })
       .returning();
@@ -332,12 +383,176 @@ async function main() {
     if (regs.length) await db.insert(schema.registrations).values(regs);
   }
 
+  /* ------------------------- Hackathon -------------------------- */
+  // A hackathon-mode event, modelled on The Physical AI Sprint, so the
+  // v1 surfaces (tracks, teams, builders, submissions, judging) have real
+  // data. Every other seeded event stays a plain meetup and shows none of it.
+  const hackStart = at(6, 9);
+  const [hack] = await db
+    .insert(schema.events)
+    .values({
+      slug: "physical-ai-sprint",
+      title: "The Physical AI Sprint",
+      description:
+        "A hackathon at the intersection of AI and the physical world. Start with technical workshops on the tools and challenge space, then form a team—or work solo—and build a working prototype.",
+      themeColor: "teal",
+      coverPattern: "grid",
+      category: "Tech",
+      startAt: hackStart,
+      endAt: new Date(hackStart.getTime() + 2 * DAY),
+      locationType: "physical",
+      locationName: "717 Market Street",
+      locationAddress: "717 Market St, San Francisco, CA",
+      capacity: 150,
+      hostId: byEmail("ada@luma.dev").id,
+      organizationId: orgOf("ada@luma.dev").id,
+      hackathonMode: true,
+      minTeamSize: 1,
+      maxTeamSize: 5,
+      submissionDeadline: new Date(hackStart.getTime() + 2 * DAY - 2 * HOUR),
+    })
+    .returning();
+
+  await db.insert(schema.tickets).values({
+    eventId: hack.id,
+    name: "Builder",
+    price: 0,
+    sortOrder: 0,
+  });
+  await db.insert(schema.eventHosts).values({
+    eventId: hack.id,
+    userId: byEmail("ada@luma.dev").id,
+    role: "host",
+  });
+
+  const trackRows = await db
+    .insert(schema.tracks)
+    .values([
+      {
+        eventId: hack.id,
+        slug: "perception",
+        name: "Perception (Sense)",
+        description:
+          "Ingesting and interpreting multi-modal sensor data such as RGB-D video and LiDAR.",
+        sortOrder: 0,
+      },
+      {
+        eventId: hack.id,
+        slug: "reasoning",
+        name: "Reasoning (Think)",
+        description:
+          "AI that analyzes constraints, plans ahead, and adapts to real-world change.",
+        sortOrder: 1,
+      },
+      {
+        eventId: hack.id,
+        slug: "action",
+        name: "Action (Act)",
+        description:
+          "Translating cognitive plans into physical action: robots, drones and IoT.",
+        sortOrder: 2,
+      },
+    ])
+    .returning();
+  const track = (slug: string) => trackRows.find((t) => t.slug === slug)!;
+
+  // Submission requirements — the Sprint's own set, shipped as the default.
+  await db.insert(schema.submissionFields).values([
+    { eventId: hack.id, label: "Project Name", type: "short_text", required: true, sortOrder: 0 },
+    { eventId: hack.id, label: "Description", type: "long_text", required: true, sortOrder: 1 },
+    { eventId: hack.id, label: "Github", type: "url", required: true, sortOrder: 2 },
+    { eventId: hack.id, label: "Demo Video", type: "url", required: true, sortOrder: 3 },
+    { eventId: hack.id, label: "Pitch Deck", type: "url", required: true, sortOrder: 4 },
+  ]);
+
+  await db.insert(schema.judgingCriteria).values([
+    { eventId: hack.id, name: "Technical Skill", weight: 25, sortOrder: 0 },
+    { eventId: hack.id, name: "Creativity", weight: 25, sortOrder: 1 },
+    { eventId: hack.id, name: "Completeness", weight: 25, sortOrder: 2 },
+    { eventId: hack.id, name: "Impact", weight: 25, sortOrder: 3 },
+  ]);
+
+  // Participants: everyone except the host, so the directory has bodies.
+  const builderEmails = usersData.map((u) => u.email);
+  await db.insert(schema.participants).values(
+    builderEmails.map((email, i) => ({
+      eventId: hack.id,
+      userId: byEmail(email).id,
+      // The unattached ones advertise themselves.
+      lookingForTeam: i >= 3,
+      githubUrl: i % 2 === 0 ? `https://github.com/${email.split("@")[0]}` : null,
+    })),
+  );
+
+  // Two teams: one with room, one closed.
+  const [teamA] = await db
+    .insert(schema.teams)
+    .values({
+      eventId: hack.id,
+      trackId: track("perception").id,
+      slug: "depth-charge",
+      name: "Depth Charge",
+      pitch: "Turning a cheap RGB-D camera into a room-scale occupancy map.",
+      open: true,
+    })
+    .returning();
+  await db.insert(schema.teamMembers).values([
+    { teamId: teamA.id, userId: byEmail("marco@luma.dev").id, role: "captain" },
+    { teamId: teamA.id, userId: byEmail("priya@luma.dev").id, role: "member" },
+  ]);
+
+  const [teamB] = await db
+    .insert(schema.teams)
+    .values({
+      eventId: hack.id,
+      trackId: track("action").id,
+      slug: "last-mile",
+      name: "Last Mile",
+      pitch: "A drone that plans its own delivery route around obstacles.",
+      open: false,
+    })
+    .returning();
+  await db.insert(schema.teamMembers).values({
+    teamId: teamB.id,
+    userId: byEmail("ada@luma.dev").id,
+    role: "captain",
+  });
+
+  // Registrations for the hackathon: the six real users (so the attendee
+  // sheet's team columns have something to join against) plus walk-ins.
+  const hackTicket = await db
+    .select()
+    .from(schema.tickets)
+    .where(eq(schema.tickets.eventId, hack.id))
+    .get();
+
+  await db.insert(schema.registrations).values([
+    ...usersData.map((u, i) => ({
+      eventId: hack.id,
+      ticketId: hackTicket!.id,
+      userId: byEmail(u.email).id,
+      name: u.name,
+      email: u.email,
+      status: i === 5 ? "pending" : "going",
+    })),
+    ...Array.from({ length: 14 }, (_, i) => ({
+      eventId: hack.id,
+      ticketId: hackTicket!.id,
+      userId: null,
+      name: `Builder ${i + 1}`,
+      email: `builder${i + 1}@example.com`,
+      status: i < 11 ? "going" : i < 13 ? "pending" : "waitlist",
+    })),
+  ]);
+
   const counts = {
     users: users.length,
     calendars: calendars.length,
-    events: seeds.length,
+    events: seeds.length + 1,
   };
-  console.log(`✓ Seeded ${counts.events} events, ${counts.calendars} calendars, ${counts.users} users`);
+  console.log(
+    `✓ Seeded ${counts.events} events (1 hackathon, 3 tracks, 2 teams), ${counts.calendars} calendars, ${counts.users} users`,
+  );
   client.close();
 }
 

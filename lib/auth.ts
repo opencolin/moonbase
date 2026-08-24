@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { nanoid } from "nanoid";
 import { db } from "@/db";
 import { sessions, users } from "@/db/schema";
+import { ensurePersonalOrganization } from "@/lib/organizations";
 
 const COOKIE = "luma_session";
 const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
@@ -49,7 +50,13 @@ export async function getCurrentUser() {
   return row.user;
 }
 
-/** Find-or-create a user by email (magic-link style, no password). */
+/**
+ * Find-or-create a user by email (magic-link style, no password).
+ *
+ * This is the single funnel for user creation, so it's also where the
+ * personal org is guaranteed. `ensurePersonalOrganization` is idempotent,
+ * so existing users created before orgs existed get one on next sign-in.
+ */
 export async function findOrCreateUser(email: string, name?: string) {
   const normalized = email.trim().toLowerCase();
   const existing = await db
@@ -57,7 +64,10 @@ export async function findOrCreateUser(email: string, name?: string) {
     .from(users)
     .where(eq(users.email, normalized))
     .get();
-  if (existing) return existing;
+  if (existing) {
+    await ensurePersonalOrganization(existing);
+    return existing;
+  }
 
   const fallbackName =
     name?.trim() ||
@@ -70,5 +80,6 @@ export async function findOrCreateUser(email: string, name?: string) {
     .insert(users)
     .values({ email: normalized, name: fallbackName })
     .returning();
+  await ensurePersonalOrganization(created);
   return created;
 }

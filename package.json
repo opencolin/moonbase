@@ -4,13 +4,16 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "tsx db/migrate.ts && tsx db/seed.ts && next build",
     "start": "next start",
     "lint": "eslint",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx db/migrate.ts",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx db/seed.ts",
+    "db:backfill-orgs": "tsx db/backfill-orgs.ts",
+    "tz:check": "tsx db/tz-check.ts",
+    "media:check": "tsx db/media-check.ts",
     "db:studio": "drizzle-kit studio",
     "setup": "tsx db/migrate.ts && tsx db/seed.ts"
   },

@@ -7,6 +7,8 @@ import { z } from "zod";
 import { db } from "@/db";
 import { events, registrations } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth";
+import { formatEventDay, formatEventTime } from "@/lib/dates";
+import { absoluteUrl, sendMail } from "@/lib/email";
 
 const schema = z.object({
   eventId: z.string().min(1),
@@ -94,6 +96,24 @@ export async function registerForEvent(
     guestCount: data.guestCount,
     status,
   });
+
+  // Fire-and-forget: sendMail never throws, and a bounced confirmation must
+  // not fail a registration that already succeeded.
+  await sendMail(
+    status === "going"
+      ? "registration.confirmed"
+      : status === "pending"
+        ? "registration.pending"
+        : "registration.waitlisted",
+    email,
+    {
+      name: data.name.trim(),
+      eventTitle: event.title,
+      eventUrl: absoluteUrl(`/${event.slug}`),
+      when: `${formatEventDay(event.startAt, event.timezone)}, ${formatEventTime(event.startAt, event.endAt, event.timezone)}`,
+      where: event.locationName ?? undefined,
+    },
+  );
 
   await rememberGuest(email);
   revalidatePath(`/${event.slug}`);

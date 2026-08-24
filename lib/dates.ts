@@ -52,3 +52,89 @@ export function relativeDayLabel(start: Date, tz = "America/Los_Angeles") {
 export function isPast(end: Date | null, start: Date) {
   return (end ?? start).getTime() < Date.now();
 }
+
+/* ------------------- Wall-clock ⇄ instant conversion ------------------- */
+
+/** How far `timeZone` is ahead of UTC at the given instant, in ms. */
+function tzOffsetMs(instant: Date, timeZone: string) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hour12: false,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    })
+      .formatToParts(instant)
+      .map((p) => [p.type, p.value]),
+  ) as Record<string, string>;
+
+  const asUtc = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour) % 24,
+    Number(parts.minute),
+    Number(parts.second),
+  );
+  return asUtc - instant.getTime();
+}
+
+/**
+ * Turn a `datetime-local` value ("2026-08-17T09:00") plus an IANA zone into
+ * the correct instant.
+ *
+ * `new Date("2026-08-17T09:00")` parses as **server-local** time, which is
+ * silently wrong the moment the server and the host are in different zones —
+ * the classic "works on my machine, off by 8 hours in production" bug. Every
+ * wall-clock string entering the DB must come through here.
+ *
+ * Two passes because the offset depends on the instant we're still solving
+ * for; the second pass settles DST boundaries.
+ */
+export function zonedTimeToUtc(local: string, timeZone: string): Date {
+  const match = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/.exec(local.trim());
+  if (!match) return new Date(NaN);
+
+  const [, y, mo, d, h, mi] = match.map(Number) as unknown as number[];
+  const wall = Date.UTC(y, mo - 1, d, h, mi);
+
+  let instant = wall;
+  for (let i = 0; i < 2; i++) {
+    instant = wall - tzOffsetMs(new Date(instant), timeZone);
+  }
+  return new Date(instant);
+}
+
+/** Inverse of {@link zonedTimeToUtc} — for prefilling `datetime-local` inputs. */
+export function utcToZonedInput(instant: Date, timeZone: string): string {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hour12: false,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+      .formatToParts(instant)
+      .map((p) => [p.type, p.value]),
+  ) as Record<string, string>;
+
+  const hour = String(Number(parts.hour) % 24).padStart(2, "0");
+  return `${parts.year}-${parts.month}-${parts.day}T${hour}:${parts.minute}`;
+}
+
+/** Reject zones Intl doesn't know, so a bad value can't poison stored instants. */
+export function isValidTimeZone(timeZone: string) {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone });
+    return true;
+  } catch {
+    return false;
+  }
+}
